@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>Ayran Chat</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
+        body { display: flex; height: 100vh; background-color: #2f3136; color: #fff; overflow: hidden; }
+        
+        #server-sidebar { width: 72px; background-color: #202225; padding: 12px 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+        .server-icon { width: 48px; height: 48px; background-color: #36393f; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; font-weight: bold; color: #dcddde; transition: all 0.2s; }
+        .server-icon:hover, .server-icon.active { border-radius: 16px; background-color: #5865f2; color: #fff; }
+        .add-btn { background-color: #3ba55d; font-size: 22px; }
+
+        #left-panel { width: 240px; background-color: #2f3136; display: flex; flex-direction: column; border-right: 1px solid #202225; }
+        .panel-header { height: 48px; padding: 0 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #202225; font-weight: bold; }
+        
+        .content-section { flex: 1; padding: 10px; overflow-y: auto; }
+        .section-title { font-size: 11px; color: #8e9297; text-transform: uppercase; font-weight: bold; margin: 12px 0 6px 4px; display: flex; justify-content: space-between; align-items: center; }
+        .channel-item, .friend-item { padding: 8px 10px; margin: 2px 0; border-radius: 4px; cursor: pointer; color: #8e9297; font-size: 14px; display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+        .channel-item:hover, .channel-item.active, .friend-item:hover, .friend-item.active { background-color: #393c43; color: #fff; }
+
+        .voice-user-item { padding: 4px 12px 4px 28px; font-size: 13px; color: #dcddde; display: flex; align-items: center; gap: 8px; }
+        .voice-user-avatar { width: 20px; height: 20px; background: #5865f2; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; color: white; font-weight: bold; }
+
+        #user-profile-bar { height: 52px; background-color: #292b2f; padding: 0 8px; display: flex; align-items: center; justify-content: space-between; }
+        .user-info { display: flex; align-items: center; gap: 8px; }
+        .avatar { width: 32px; height: 32px; background-color: #5865f2; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; }
+        .username-text { font-size: 14px; font-weight: bold; }
+        .status-text { font-size: 11px; color: #b9bbbe; }
+        .icon-btn { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 4px; cursor: pointer; color: #b9bbbe; }
+        .icon-btn:hover { background-color: #393c43; color: #fff; }
+
+        #voice-panel { background-color: #292b2f; padding: 8px 12px; border-bottom: 1px solid #202225; display: none; }
+        .voice-status { font-size: 12px; color: #3ba55d; font-weight: bold; }
+
+        #chat-area { flex: 1; display: flex; flex-direction: column; background-color: #36393f; }
+        #chat-header { height: 48px; padding: 0 16px; background-color: #36393f; border-bottom: 1px solid #202225; font-weight: bold; display: flex; align-items: center; justify-content: space-between; }
+        #messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+        .message { background-color: #2f3136; padding: 10px 14px; border-radius: 6px; max-width: 75%; width: fit-content; }
+        .message .user { font-size: 12px; color: #5865f2; font-weight: bold; margin-bottom: 2px; }
+
+        #input-area { padding: 16px; background-color: #36393f; display: flex; gap: 10px; }
+        #message-input { flex: 1; padding: 12px; border-radius: 6px; border: none; background-color: #40444b; color: #fff; outline: none; font-size: 14px; }
+        button { padding: 10px 18px; border: none; background-color: #5865f2; color: #fff; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        button:hover { background-color: #4752c4; }
+
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); justify-content: center; align-items: center; z-index: 100; }
+        .modal-content { background: #36393f; padding: 24px; border-radius: 8px; width: 400px; display: flex; flex-direction: column; gap: 16px; text-align: center; }
+        .modal-content input { padding: 10px; border-radius: 4px; border: none; background: #202225; color: #fff; outline: none; }
+        .modal-buttons { display: flex; justify-content: center; gap: 12px; }
+        .invite-code-box { background: #202225; padding: 12px; border-radius: 4px; font-family: monospace; font-size: 18px; color: #3ba55d; border: 1px dashed #3ba55d; }
+    </style>
+</head>
+<body>
+
+    <div id="audio-container"></div>
+
+    <div id="server-sidebar">
+        <div class="server-icon friends-btn" title="Arkadaş ve DM" onclick="showFriendsView()">👥</div>
+        <div style="width:32px; height:2px; background:#36393f; border-radius:1px;"></div>
+        <div id="server-list" style="display:flex; flex-direction:column; gap:8px;"></div>
+        <div class="server-icon add-btn" title="Sunucu Ekle veya Katıl" onclick="openServerActionModal()">+</div>
+    </div>
+
+    <div id="left-panel">
+        <div class="panel-header">
+            <span id="panel-title">Ayran Chat</span>
+            <button id="invite-btn" style="display:none; font-size:11px; padding:4px 8px; background:#3ba55d;" onclick="openInviteModal()">+ Davet Et</button>
+        </div>
+        
+        <div id="voice-panel">
+            <div class="voice-status">🔊 Sesli Bağlantı</div>
+            <div id="connected-channel-name" style="font-size: 11px; color: #dcddde;"></div>
+            <button style="background:#ed4245; width:100%; margin-top:6px; padding:4px; font-size:12px;" onclick="leaveVoiceChannel()">Ayrıl / Kapat</button>
+        </div>
+
+        <div class="content-section" id="panel-content"></div>
+
+        <div id="user-profile-bar">
+            <div class="user-info">
+                <div class="avatar" id="my-avatar">{{ username[0].upper() }}</div>
+                <div>
+                    <div class="username-text">{{ username }}</div>
+                    <div class="status-text" id="my-status">Çevrimiçi</div>
+                </div>
+            </div>
+            <div style="display:flex;">
+                <div class="icon-btn" title="Ayarlar">⚙️</div>
+                <div class="icon-btn" title="Çıkış Yap" onclick="location.href='/logout'">🚪</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="chat-area">
+        <div id="chat-header">
+            <span id="channel-title"># genel</span>
+            <div style="display:flex; gap:8px; align-items:center;">
+                <input type="text" id="search-msg-input" placeholder="Mesajlarda ara..." onkeyup="searchMessages()" style="padding:4px 8px; border-radius:4px; border:none; background:#202225; color:#fff; font-size:12px; display:none;">
+                <button id="call-user-top-btn" style="display:none; background:#3ba55d; font-size:12px; padding:6px 12px;" onclick="startDirectCall()">📞 Ara</button>
+                <button id="add-friend-top-btn" style="display:none; background:#3ba55d; font-size:12px; padding:6px 12px;" onclick="openAddFriendModal()">Arkadaş Ekle</button>
+            </div>
+        </div>
+        <div id="messages"></div>
+        <div id="input-area">
+            <input type="text" id="message-input" placeholder="Mesaj yaz..." onkeypress="if(event.key==='Enter') sendMessage()">
+            <button onclick="sendMessage()">Gönder</button>
+        </div>
+    </div>
+
+    <!-- MODALLAR -->
+    <div class="modal" id="incoming-call-modal">
+        <div class="modal-content" style="align-items:center;">
+            <div style="font-size:40px; margin-bottom:-10px;">📞</div>
+            <h3 id="incoming-call-text">Bir kullanıcı sizi arıyor...</h3>
+            <div class="modal-buttons" style="gap:20px; margin-top:10px;">
+                <button id="accept-call-btn" style="background:#3ba55d; padding:10px 24px;">Kabul Et</button>
+                <button id="reject-call-btn" style="background:#ed4245; padding:10px 24px;" onclick="rejectCall()">Reddet</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="server-action-modal">
+        <div class="modal-content">
+            <h3>Sunucu Seçenekleri</h3>
+            <div class="modal-buttons" style="flex-direction:column; gap:10px;">
+                <button style="background:#5865f2;" onclick="showCreateServerUI()">Sunucu Oluştur</button>
+                <button style="background:#3ba55d;" onclick="showJoinServerUI()">Davet Kodu ile Katıl</button>
+                <button style="background:#4f545c;" onclick="closeModal('server-action-modal')">İptal</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="join-server-modal">
+        <div class="modal-content" style="text-align:left;">
+            <h3>Sunucuya Katıl</h3>
+            <input type="text" id="invite-code-input" placeholder="Örn: GENEL123">
+            <div class="modal-buttons" style="justify-content:flex-end; margin-top:10px;">
+                <button style="background:#4f545c;" onclick="closeModal('join-server-modal')">İptal</button>
+                <button style="background:#3ba55d;" onclick="joinServerByCode()">Katıl</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="show-invite-modal">
+        <div class="modal-content">
+            <h3 id="invite-server-title">Sunucuya Davet Et</h3>
+            <div class="invite-code-box" id="invite-code-display">---</div>
+            <button onclick="closeModal('show-invite-modal')">Tamam</button>
+        </div>
+    </div>
+
+    <div class="modal" id="add-friend-modal">
+        <div class="modal-content" style="text-align:left;">
+            <h3>Arkadaş Ekle</h3>
+            <input type="text" id="friend-username-input" placeholder="Kullanıcı Adı">
+            <div class="modal-buttons" style="justify-content:flex-end; margin-top:10px;">
+                <button style="background:#4f545c;" onclick="closeModal('add-friend-modal')">İptal</button>
+                <button style="background:#3ba55d;" onclick="sendFriendRequest()">İstek Gönder</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        const currentUsername = "{{ username }}";
+
+        let currentView = 'server'; 
+        let currentServer = null;
+        let currentTextChannel = null;
+        let currentVoiceChannel = null;
+        let currentDMUser = null;
+        let activeCaller = null; 
+        
+        let globalVoiceState = {};
+        let myFriends = [];
+        let myRequests = [];
+
+        let localStream = null;
+        let peerConnections = {}; 
+        const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+        let callingInterval = null;
+
+        function playMessageSound() {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15);
+                gain.gain.setValueAtTime(0.15, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.25);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.25);
+            } catch(e) {}
+        }
+
+        function playCallingSound() {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                function playTone(freq, duration, delay) {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(freq, ctx.currentTime + delay);
+                    gain.gain.setValueAtTime(0.1, ctx.currentTime + delay);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + duration);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(ctx.currentTime + delay);
+                    osc.stop(ctx.currentTime + delay + duration);
+                }
+                playTone(440, 0.4, 0);    
+                playTone(480, 0.4, 0.45); 
+            } catch(e) {}
+        }
+
+        function startCallingSound() {
+            stopCallingSound();
+            playCallingSound();
+            callingInterval = setInterval(() => {
+                playCallingSound();
+            }, 2500);
+        }
+
+        function stopCallingSound() {
+            if (callingInterval) {
+                clearInterval(callingInterval);
+                callingInterval = null;
+            }
+        }
+
+        socket.on('connect', () => { 
+            socket.emit('get_servers');
+            socket.emit('get_friend_data');
+        });
+
+        socket.on('load_servers', (servers) => {
+            const list = document.getElementById('server-list');
+            list.innerHTML = '';
+            servers.forEach(srv => {
+                const el = document.createElement('div');
+                el.className = 'server-icon' + (currentServer && currentServer.id === srv.id && currentView === 'server' ? ' active' : '');
+                el.innerText = srv.name.substring(0, 2).toUpperCase();
+                el.onclick = () => selectServer(srv);
+                list.appendChild(el);
+            });
+            if(servers.length > 0 && !currentServer && currentView === 'server') selectServer(servers[0]);
+        });
+
+        socket.on('update_all_voice_members', (voiceData) => {
+            globalVoiceState = voiceData;
+            if(currentView === 'server') renderChannels();
+        });
+
+        function selectServer(server) {
+            currentView = 'server';
+            currentServer = server;
+            currentDMUser = null;
+            document.getElementById('invite-btn').style.display = 'inline-block';
+            document.getElementById('add-friend-top-btn').style.display = 'none';
+            document.getElementById('call-user-top-btn').style.display = 'none';
+            document.getElementById('search-msg-input').style.display = 'inline-block';
+            document.getElementById('panel-title').innerText = server.name;
+            renderChannels();
+        }
+
+        function renderChannels() {
+            const container = document.getElementById('panel-content');
+            container.innerHTML = `
+                <div class="section-title"><span>Metin Kanalları</span><span style="cursor:pointer" onclick="createNewChannel('text')">+</span></div>
+                <div id="text-channel-list"></div>
+                <div class="section-title"><span>Ses Kanalları</span><span style="cursor:pointer" onclick="createNewChannel('voice')">+</span></div>
+                <div id="voice-channel-list"></div>
+            `;
+
+            const tList = document.getElementById('text-channel-list');
+            const vList = document.getElementById('voice-channel-list');
+
+            (currentServer.text_channels || []).forEach(chan => {
+                const el = document.createElement('div');
+                el.className = 'channel-item' + (currentTextChannel === chan ? ' active' : '');
+                el.innerText = '# ' + chan;
+                el.onclick = () => selectTextChannel(chan);
+                tList.appendChild(el);
+            });
+
+            (currentServer.voice_channels || []).forEach(chan => {
+                const wrapper = document.createElement('div');
+                const el = document.createElement('div');
+                el.className = 'channel-item' + (currentVoiceChannel === chan ? ' active' : '');
+                el.innerText = '🔊 ' + chan;
+                el.onclick = () => joinVoiceChannel(chan);
+                wrapper.appendChild(el);
+
+                const serverVoiceData = globalVoiceState[currentServer.id];
+                if(serverVoiceData && serverVoiceData[chan]) {
+                    serverVoiceData[chan].forEach(member => {
+                        const uDiv = document.createElement('div');
+                        uDiv.className = 'voice-user-item';
+                        uDiv.innerHTML = `<div class="voice-user-avatar">${member[0].toUpperCase()}</div> <span>${member}</span>`;
+                        wrapper.appendChild(uDiv);
+                    });
+                }
+
+                vList.appendChild(wrapper);
+            });
+
+            if(currentServer.text_channels.length > 0 && !currentTextChannel) {
+                selectTextChannel(currentServer.text_channels[0]);
+            }
+        }
+
+        function selectTextChannel(channel) {
+            if(currentTextChannel && currentServer) {
+                socket.emit('leave_channel', { server_id: currentServer.id, channel: currentTextChannel });
+            }
+            currentTextChannel = channel;
+            document.getElementById('channel-title').innerText = `# ${channel}`;
+            document.getElementById('messages').innerHTML = '';
+            socket.emit('join_channel', { server_id: currentServer.id, channel: channel });
+            renderChannels();
+        }
+
+        function showFriendsView() {
+            currentView = 'friends';
+            currentServer = null;
+            currentDMUser = null;
+            document.getElementById('panel-title').innerText = 'Direkt Mesajlar';
+            document.getElementById('invite-btn').style.display = 'none';
+            document.getElementById('add-friend-top-btn').style.display = 'inline-block';
+            document.getElementById('call-user-top-btn').style.display = 'none';
+            document.getElementById('search-msg-input').style.display = 'none';
+            document.getElementById('channel-title').innerText = '👥 Arkadaş Listesi';
+            document.getElementById('messages').innerHTML = '';
+            renderFriendsPanel();
+        }
+
+        function renderFriendsPanel() {
+            const container = document.getElementById('panel-content');
+            let reqHtml = '';
+            
+            if (myRequests && myRequests.length > 0) {
+                reqHtml = `<div class="section-title"><span>Gelen İstekler (${myRequests.length})</span></div>`;
+                myRequests.forEach(req => {
+                    reqHtml += `
+                        <div class="friend-item">
+                            <span>${req}</span> 
+                            <button style="padding:2px 6px; font-size:11px; background:#3ba55d;" onclick="acceptRequest('${req}')">Kabul Et</button>
+                        </div>`;
+                });
+            }
+
+            let friendsHtml = `<div class="section-title"><span>Arkadaşların (${myFriends ? myFriends.length : 0})</span></div>`;
+            if (myFriends && myFriends.length > 0) {
+                myFriends.forEach(fr => {
+                    friendsHtml += `<div class="friend-item" onclick="openDM('${fr}')"><span>💬 ${fr}</span></div>`;
+                });
+            } else {
+                friendsHtml += `<div style="font-size:12px; color:#8e9297; padding:8px;">Henüz arkadaşınız yok.</div>`;
+            }
+
+            container.innerHTML = reqHtml + friendsHtml;
+        }
+
+        function openDM(friend) {
+            currentDMUser = friend;
+            document.getElementById('channel-title').innerText = `@ ${friend}`;
+            document.getElementById('call-user-top-btn').style.display = 'inline-block';
+            document.getElementById('search-msg-input').style.display = 'inline-block';
+            document.getElementById('messages').innerHTML = '';
+            socket.emit('join_dm', { target: friend });
+        }
+
+        socket.on('update_friend_data', (data) => {
+            myFriends = data.friends || [];
+            myRequests = data.requests || [];
+            if(currentView === 'friends') renderFriendsPanel();
+        });
+
+        function openAddFriendModal() { document.getElementById('add-friend-modal').style.display = 'flex'; }
+        function sendFriendRequest() {
+            const input = document.getElementById('friend-username-input');
+            if(input.value.trim() !== '') {
+                socket.emit('send_friend_request', { target: input.value.trim() });
+                input.value = '';
+                closeModal('add-friend-modal');
+            }
+        }
+        function acceptRequest(req) { socket.emit('accept_friend_request', { requester: req }); }
+        socket.on('friend_response', (data) => alert(data.message));
+
+        async function joinVoiceChannel(channel) {
+            if(currentVoiceChannel === channel) return;
+            if(currentVoiceChannel) leaveVoiceChannel();
+
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                currentVoiceChannel = channel;
+                document.getElementById('voice-panel').style.display = 'block';
+                document.getElementById('connected-channel-name').innerText = `${currentServer.name} / ${channel}`;
+                socket.emit('join_voice', { server_id: currentServer.id, channel: channel });
+                renderChannels();
+            } catch (err) { alert("Mikrofon izni gerekli!"); }
+        }
+
+        async function startDirectCall() {
+            if(!currentDMUser) return;
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                document.getElementById('voice-panel').style.display = 'block';
+                document.getElementById('connected-channel-name').innerText = `@ ${currentDMUser} ile Aratılıyor...`;
+                
+                startCallingSound();
+                socket.emit('start_call', { target: currentDMUser });
+            } catch (err) { alert("Mikrofon izni gerekli!"); }
+        }
+
+        socket.on('incoming_call', (data) => {
+            activeCaller = data.from;
+            startCallingSound();
+
+            document.getElementById('incoming-call-text').innerText = `${data.from} seni arıyor...`;
+            document.getElementById('incoming-call-modal').style.display = 'flex';
+            
+            document.getElementById('accept-call-btn').onclick = () => {
+                stopCallingSound(); 
+                closeModal('incoming-call-modal');
+                navigator.mediaDevices.getUserMedia({ audio: true, video: false }).then(stream => {
+                    localStream = stream;
+                    document.getElementById('voice-panel').style.display = 'block';
+                    document.getElementById('connected-channel-name').innerText = `@ ${data.from} ile Arama`;
+                    createPeerConnection(data.sid, true);
+                }).catch(() => alert("Mikrofon izni verilmedi!"));
+            };
+        });
+
+        function rejectCall() {
+            stopCallingSound();
+            closeModal('incoming-call-modal');
+            socket.emit('reject_call', { target: activeCaller });
+            activeCaller = null;
+        }
+
+        socket.on('call_rejected', () => {
+            stopCallingSound();
+            leaveVoiceChannel();
+            alert("Arama sonlandırıldı.");
+        });
+
+        socket.on('user_joined_voice_signal', (data) => {
+            if(currentVoiceChannel && data.user !== currentUsername) createPeerConnection(data.sid, true);
+        });
+
+        function leaveVoiceChannel() {
+            stopCallingSound();
+            if(currentVoiceChannel && currentServer) socket.emit('leave_voice', { server_id: currentServer.id, channel: currentVoiceChannel });
+            if(localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+            Object.keys(peerConnections).forEach(sid => { peerConnections[sid].close(); delete peerConnections[sid]; });
+            currentVoiceChannel = null;
+            document.getElementById('voice-panel').style.display = 'none';
+            document.getElementById('connected-channel-name').innerText = '';
+            document.getElementById('audio-container').innerHTML = '';
+            if(currentServer) renderChannels();
+        }
+
+        function createPeerConnection(sid, isOffer) {
+            const pc = new RTCPeerConnection(rtcConfig);
+            peerConnections[sid] = pc;
+            if(localStream) localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+            pc.onicecandidate = (e) => { if (e.candidate) socket.emit('signal', { to: sid, ice: e.candidate }); };
+            pc.ontrack = (e) => {
+                stopCallingSound();
+                if(currentDMUser) {
+                    document.getElementById('connected-channel-name').innerText = `@ ${currentDMUser} ile Arama`;
+                }
+
+                let audio = document.getElementById(`audio-${sid}`);
+                if (!audio) {
+                    audio = document.createElement('audio');
+                    audio.id = `audio-${sid}`;
+                    audio.autoplay = true;
+                    document.getElementById('audio-container').appendChild(audio);
+                }
+                audio.srcObject = e.streams[0];
+                audio.play().catch(err => console.log(err));
+            };
+            if(isOffer) {
+                pc.createOffer().then(offer => {
+                    pc.setLocalDescription(offer);
+                    socket.emit('signal', { to: sid, sdp: offer });
+                });
+            }
+            return pc;
+        }
+
+        socket.on('signal', async (data) => {
+            let pc = peerConnections[data.sid] || createPeerConnection(data.sid, false);
+            if (data.sdp) {
+                await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                if (data.sdp.type === 'offer') {
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+                    socket.emit('signal', { to: data.sid, sdp: pc.localDescription });
+                }
+            } else if (data.ice) {
+                await pc.addIceCandidate(new RTCIceCandidate(data.ice));
+            }
+        });
+
+        function sendMessage() {
+            const input = document.getElementById('message-input');
+            const msg = input.value.trim();
+            if(!msg) return;
+
+            if(currentView === 'server' && currentServer && currentTextChannel) {
+                socket.emit('send_message', { server_id: currentServer.id, channel: currentTextChannel, message: msg });
+            } else if(currentView === 'friends' && currentDMUser) {
+                socket.emit('send_dm_message', { target: currentDMUser, message: msg });
+            }
+            input.value = '';
+        }
+
+        socket.on('receive_message', (data) => {
+            const box = document.getElementById('messages');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'message';
+            msgDiv.innerHTML = `<div class="user">${data.user}</div><div>${data.message}</div>`;
+            box.appendChild(msgDiv);
+            box.scrollTop = box.scrollHeight;
+            
+            if (data.user !== currentUsername) {
+                playMessageSound();
+            }
+        });
+
+        function searchMessages() {
+            const query = document.getElementById('search-msg-input').value.toLowerCase();
+            const msgs = document.querySelectorAll('#messages .message');
+            msgs.forEach(m => {
+                if(m.innerText.toLowerCase().includes(query)) {
+                    m.style.display = 'block';
+                } else {
+                    m.style.display = 'none';
+                }
+            });
+        }
+
+        function openServerActionModal() { document.getElementById('server-action-modal').style.display = 'flex'; }
+        function showCreateServerUI() { closeModal('server-action-modal'); const name = prompt("Yeni Sunucu Adı:"); if(name) socket.emit('create_server', { name: name }); }
+        function showJoinServerUI() { closeModal('server-action-modal'); document.getElementById('join-server-modal').style.display = 'flex'; }
+        function joinServerByCode() { const code = document.getElementById('invite-code-input').value.trim(); if(code) socket.emit('join_by_invite', { code: code }); }
+        socket.on('join_invite_response', (data) => { alert(data.message); if(data.success) closeModal('join-server-modal'); });
+        function openInviteModal() { if(currentServer) socket.emit('get_invite_code', { server_id: currentServer.id }); }
+        socket.on('show_invite_code', (data) => { document.getElementById('invite-server-title').innerText = `${data.server_name} Sunucusuna Davet Et`; document.getElementById('invite-code-display').innerText = data.code; document.getElementById('show-invite-modal').style.display = 'flex'; });
+        function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+        function createNewChannel(type) { if(currentServer) { const name = prompt(`Yeni ${type === 'text' ? 'Metin' : 'Ses'} Kanalı Adı:`); if(name) socket.emit('create_channel', { server_id: currentServer.id, channel_name: name, type: type }); } }
+    </script>
+</body>
+</html>
